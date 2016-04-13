@@ -1,0 +1,14 @@
+Three jars are 3rd-party libraries for the svm classifer.
+
+How to use?
+(1) put these jars and java code in the same path
+(2) javac -cp $CLASSPATH:./* Weka.java
+(3) java -cp $CLASSPATH:./* Weka <input_file_path>
+
+Notice:
+if you dont input the file_path in step 3, the program will use "train.txt" under the same path. If there is no "train.txt" under current path, the program will exit with an exception.
+
+The format of input file?
+1 <word vector>
+-1 <word vector>
+
