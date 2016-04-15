@@ -26,8 +26,8 @@ def getDistributed(idx, U):
 
 def getStr(word_v_np):
     tmp_str = ""
-    for row in word_v_np:
-        tmp_str += str(row[0])+" "
+    for token in word_v_np:
+        tmp_str += str(token)+" "
     return tmp_str
 
 if len(sys.argv) != 2:
@@ -39,38 +39,46 @@ vocab_file = open("vocabulary")
 
 for line in vocab_file:
     tokens = line.strip().split("\t")
+    # print(tokens)
     vocab[tokens[1]] = int(tokens[0])
 
 V = len(vocab)
 
+print("Vocabulary was read!")
+
 mat_file = open("word_vector_model")
 u_tmp = []
+for i in range(0, V):
+    u_tmp.append([])
+
 for line in mat_file:
     tokens = line.strip().split("\t")
-    row = []
+    v = 0
     for token in tokens:
-        row.append(float(token))
-    u_tmp.append(row)
-U = np.array(u_tmp)
+        u_tmp[v].append(float(token))
+        v += 1
 
-vLen = len(U)
+vLen = len(u_tmp[0])
+
+print("U matrix was read!")
 
 raw_file = open(sys.argv[1])
 
-doc_vector_file = open("docvector", "w")
+doc_vector_file = open("doc_vector.txt", "w")
 
 lIdx = 0
 for line in raw_file:
+    print("Start dealing with line: " + str(lIdx))
     tokens = line.strip().split(" ")
     vector = []
     for i in range(0, vLen):
-        vector.append([0.0])
+        vector.append(0.0)
     word_v_np = np.array(vector)
     count = 0
     for token in tokens:
         idx = getIdx(vocab, token)
         if idx != -1:
-            tmp = getDistributed(idx, U)
+            tmp = np.array(u_tmp[idx])
             word_v_np += tmp
             count += 1
     word_v_np /= count
