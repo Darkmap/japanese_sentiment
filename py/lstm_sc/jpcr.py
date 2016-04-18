@@ -104,10 +104,10 @@ def load_data(n_words=200000, valid_portion=0.1, maxlen=None,
 
     train_set = ([],[])
     load_helper(train_set, "positive_train.txt", 1, vocab)
-    load_helper(train_set, "negative_train.txt", -1, vocab)
+    load_helper(train_set, "negative_train.txt", 0, vocab)
     test_set = ([], [])
     load_helper(test_set, "positive_test.txt", 1, vocab)
-    load_helper(test_set, "negative_test.txt", -1, vocab)
+    load_helper(test_set, "negative_test.txt", 0, vocab)
 
     # train_set = pickle.load(f)
     # test_set = pickle.load(f)
