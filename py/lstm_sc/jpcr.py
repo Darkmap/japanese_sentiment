@@ -1,60 +1,52 @@
+"""
+This python program is adapted by following the tutorial (http://deeplearning.net/tutorial/lstm.html).
+
+This program is used for loading the Japanese customer reviews dataset which crawled by LGM team for the usage of research
+about building language model base on LSTM (https://github.com/Darkmap/japanese_sentiment).
+"""
+
 from __future__ import print_function
-from six.moves import xrange
-import six.moves.cPickle as pickle
-
-import gzip
-import os
-
 import numpy
 import theano
+import random
 
-
-def prepare_data(seqs, labels, maxlen=None):
-    """Create the matrices from the datasets.
-
-    This pad each sequence to the same lenght: the lenght of the
-    longuest sequence or maxlen.
-
-    if maxlen is set, we will cut all sequence to this maximum
-    lenght.
-
-    This swap the axis!
+def prepare_data(seqs, labels):
     """
-    # x: a list of sentences
-    lengths = [len(s) for s in seqs]
+    Create the matrices from the datasets.
 
-    if maxlen is not None:
-        new_seqs = []
-        new_labels = []
-        new_lengths = []
-        for l, s, y in zip(lengths, seqs, labels):
-            if l < maxlen:
-                new_seqs.append(s)
-                new_labels.append(y)
-                new_lengths.append(l)
-        lengths = new_lengths
-        labels = new_labels
-        seqs = new_seqs
+    Firstly, each sequence is processed to be the same length:
+        the length of the longuest sequence or maxlen.
 
-        if len(lengths) < 1:
-            return None, None, None
+    This swap the axises
+    :param seqs is the list of sentences
+    :param labels is the list of 0/1 labels
+    """
+    lens = [len(s) for s in seqs]
 
-    n_samples = len(seqs)
-    maxlen = numpy.max(lengths)
+    size = len(seqs)
+    max_len = numpy.max(lens)
 
-    x = numpy.zeros((maxlen, n_samples)).astype('int64')
-    x_mask = numpy.zeros((maxlen, n_samples)).astype(theano.config.floatX)
+    # For this part's algorithm analysis, you can check an article (http://www.cnblogs.com/neopenx/p/4806006.html)
+    # if you can read Chinese :).
+    sentences = numpy.zeros((max_len, size)).astype('int64')
+    sentences_mask = numpy.zeros((max_len, size)).astype(theano.config.floatX)
+
     for idx, s in enumerate(seqs):
-        x[:lengths[idx], idx] = s
-        x_mask[:lengths[idx], idx] = 1.
+        sentences[:lens[idx], idx] = s
+        sentences_mask[:lens[idx], idx] = 1.
 
-    return x, x_mask, labels
+    return sentences, sentences_mask, labels
 
 
 def load_helper(train_set, path, label, vocab):
-
+    """
+    For loading different types of train and test data.
+    :param train_set: the two-dimensional list for storing training set
+    :param path: the data file path
+    :param label: the label for this specific file, because we store the reviews with same label in the same file
+    :param vocab: the vocabulary dict
+    """
     file = open(path)
-
 
     for line in file:
         sample = []
@@ -69,39 +61,24 @@ def load_helper(train_set, path, label, vocab):
             train_set[1].append(label)
 
 
-def load_data(n_words=200000, valid_portion=0.1, maxlen=None,
-              sort_by_len=True):
-    '''Loads the dataset
-
-    :type path: String
-    :param path: The path to the dataset (here IMDB)
-    :type n_words: int
-    :param n_words: The number of word to keep in the vocabulary.
-        All extra words are set to unknow (1).
-    :type valid_portion: float
+def load_data(valid_portion=0.1):
+    """
+    Method for Loading the dataset
+    :param path: The path to the dataset (here Japanese Customer Reviews)
     :param valid_portion: The proportion of the full train set used for
         the validation set.
-    :type maxlen: None or positive int
-    :param maxlen: the max sequence length we use in the train/valid set.
-    :type sort_by_len: bool
-    :name sort_by_len: Sort by the sequence lenght for the train,
-        valid and test set. This allow faster execution as it cause
-        less padding per minibatch. Another mechanism must be used to
-        shuffle the train set at each epoch.
+    """
 
-    '''
-
-    #############
-    # LOAD DATA #
-    #############
-
-    # Load the dataset
+    # Get the Vocabulary  which is a dict contains (word:index) entries
     vocab_file = open("vocabulary")
     vocab = {}
     for line in vocab_file:
         tokens = line.strip().split("\t")
         vocab[tokens[1]] = int(tokens[0])
 
+    # Load train_set and test_set
+    # train/test_set[0] is the list of documents. The document is represented as [idx0, idx1, ... ,idxn].
+    # train/test_set[1] is the list of labels. For the label, 0 is negative, 1 is positive.
     train_set = ([],[])
     load_helper(train_set, "positive_train.txt", 1, vocab)
     load_helper(train_set, "negative_train.txt", 0, vocab)
@@ -109,65 +86,26 @@ def load_data(n_words=200000, valid_portion=0.1, maxlen=None,
     load_helper(test_set, "positive_test.txt", 1, vocab)
     load_helper(test_set, "negative_test.txt", 0, vocab)
 
-    # train_set = pickle.load(f)
-    # test_set = pickle.load(f)
-    # f.close()
-    if maxlen:
-        new_train_set_x = []
-        new_train_set_y = []
-        for x, y in zip(train_set[0], train_set[1]):
-            if len(x) < maxlen:
-                new_train_set_x.append(x)
-                new_train_set_y.append(y)
-        train_set = (new_train_set_x, new_train_set_y)
-        del new_train_set_x, new_train_set_y
-
-    # split training set into validation set
+    # Select some reviews from training to create validation set
     train_set_x, train_set_y = train_set
-    n_samples = len(train_set_x)
-    sidx = numpy.random.permutation(n_samples)
-    n_train = int(numpy.round(n_samples * (1. - valid_portion)))
-    valid_set_x = [train_set_x[s] for s in sidx[n_train:]]
-    valid_set_y = [train_set_y[s] for s in sidx[n_train:]]
-    train_set_x = [train_set_x[s] for s in sidx[:n_train]]
-    train_set_y = [train_set_y[s] for s in sidx[:n_train]]
+    size = len(train_set_x)
 
-    train_set = (train_set_x, train_set_y)
-    valid_set = (valid_set_x, valid_set_y)
+    train_x = []
+    train_y = []
+    valid_x = []
+    valid_y = []
 
-    def remove_unk(x):
-        return [[1 if w >= n_words else w for w in sen] for sen in x]
+    thred = int(100 * valid_portion)
+    for idx in range(0, size):
+        gen = random.randint(1, 100)
+        if gen <= thred:
+            valid_x.append(train_set_x[idx])
+            valid_y.append(train_set_y[idx])
+        else:
+            train_x.append(train_set_x[idx])
+            train_y.append(train_set_y[idx])
 
-    test_set_x, test_set_y = test_set
-    valid_set_x, valid_set_y = valid_set
-    train_set_x, train_set_y = train_set
+    train_set = (train_x, train_y)
+    valid_set = (valid_x, valid_y)
 
-    train_set_x = remove_unk(train_set_x)
-    valid_set_x = remove_unk(valid_set_x)
-    test_set_x = remove_unk(test_set_x)
-
-    def len_argsort(seq):
-        return sorted(range(len(seq)), key=lambda x: len(seq[x]))
-
-    if sort_by_len:
-        sorted_index = len_argsort(test_set_x)
-        test_set_x = [test_set_x[i] for i in sorted_index]
-        test_set_y = [test_set_y[i] for i in sorted_index]
-
-        sorted_index = len_argsort(valid_set_x)
-        valid_set_x = [valid_set_x[i] for i in sorted_index]
-        valid_set_y = [valid_set_y[i] for i in sorted_index]
-
-        sorted_index = len_argsort(train_set_x)
-        train_set_x = [train_set_x[i] for i in sorted_index]
-        train_set_y = [train_set_y[i] for i in sorted_index]
-
-    train = (train_set_x, train_set_y)
-    valid = (valid_set_x, valid_set_y)
-    test = (test_set_x, test_set_y)
-
-    return train, valid, test
-
-if __name__ == '__main__':
-    # See function train for all possible parameter and there definition.
-    load_data()
+    return train_set, valid_set, test_set

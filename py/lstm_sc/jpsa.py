@@ -415,8 +415,7 @@ def pred_probs(f_pred_prob, prepare_data, data, iterator, verbose=False):
 
     for _, valid_index in iterator:
         x, mask, y = prepare_data([data[0][t] for t in valid_index],
-                                  numpy.array(data[1])[valid_index],
-                                  maxlen=None)
+                                  numpy.array(data[1])[valid_index])
         pred_probs = f_pred_prob(x, mask)
         probs[valid_index, :] = pred_probs
 
@@ -436,8 +435,7 @@ def pred_error(f_pred, prepare_data, data, iterator, verbose=False):
     valid_err = 0
     for _, valid_index in iterator:
         x, mask, y = prepare_data([data[0][t] for t in valid_index],
-                                  numpy.array(data[1])[valid_index],
-                                  maxlen=None)
+                                  numpy.array(data[1])[valid_index])
         preds = f_pred(x, mask)
         targets = numpy.array(data[1])[valid_index]
         valid_err += (preds == targets).sum()
@@ -459,7 +457,7 @@ def train_lstm(
     saveto='lstm_model.npz',  # The best model will be saved there
     validFreq=500,  # Compute the validation error after this number of update.
     saveFreq=1110,  # Save the parameters after every saveFreq updates
-    maxlen=500,  # Sequence longer then this get ignored
+    # maxlen=500,  # Sequence longer then this get ignored
     batch_size=16,  # The batch size during training.
     valid_batch_size=64,  # The batch size used for validation/test set.
     dataset='jpcr',
@@ -479,8 +477,8 @@ def train_lstm(
     load_data, prepare_data = get_dataset(dataset)
 
     print('Loading data')
-    train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
-                                   maxlen=maxlen)
+    train, valid, test = load_data(valid_portion=0.05)
+                                   # maxlen=maxlen)
     if test_size > 0:
         # The test set is sorted by size, but we want to keep random
         # size example.  So we must select a random selection of the
