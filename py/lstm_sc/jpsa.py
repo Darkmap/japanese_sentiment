@@ -27,10 +27,6 @@ SEED = 321
 numpy.random.seed(SEED)
 
 
-def numpy_floatX(data):
-    return numpy.asarray(data, dtype=config.floatX)
-
-
 def get_minibatches_idx(n, minibatch_size, shuffle=False):
     """
     Used to shuffle the dataset at each iteration.
@@ -73,25 +69,36 @@ def unzip(zipped):
     return new_params
 
 
-def _p(pp, name):
-    return '%s_%s' % (pp, name)
-
-
 def init_params(options):
     """
     Global (not LSTM) parameter. For the embedding and the classifier.
     """
     params = OrderedDict()
+
     # embedding
-    randn = numpy.random.rand(options['n_words'],
-                              options['dim_proj'])
+    randn = numpy.random.rand(options['n_words'], options['dim_proj'])
     params['Wemb'] = (0.01 * randn).astype(config.floatX)
-    params = param_init_lstm(options,
-                                              params,
-                                              prefix='lstm')
-    # classifier
-    params['U'] = 0.01 * numpy.random.randn(options['dim_proj'],
-                                            options['ydim']).astype(config.floatX)
+
+    # Init the LSTM parameter:
+    # Such concatenate is designed for the parallel computing
+    W = numpy.concatenate([ortho_weight(options['dim_proj']),
+                           ortho_weight(options['dim_proj']),
+                           ortho_weight(options['dim_proj']),
+                           ortho_weight(options['dim_proj'])], axis=1)
+    params['lstm_W'] = W
+
+    # Such concatenate is designed for the parallel computing
+    U = numpy.concatenate([ortho_weight(options['dim_proj']),
+                           ortho_weight(options['dim_proj']),
+                           ortho_weight(options['dim_proj']),
+                           ortho_weight(options['dim_proj'])], axis=1)
+    params['lstm_U'] = U
+
+    b = numpy.zeros((4 * options['dim_proj']))
+    params['lstm_b'] = b.astype(config.floatX)
+
+    # Logistic regression classifier
+    params['U'] = 0.01 * numpy.random.randn(options['dim_proj'], options['ydim']).astype(config.floatX)
     params['b'] = numpy.zeros((options['ydim'],)).astype(config.floatX)
 
     return params
@@ -113,36 +120,14 @@ def init_tparams(params):
         tparams[kk] = theano.shared(params[kk], name=kk)
     return tparams
 
-
+# Get the U matrix of the SVD result of the random W matrix(ndim * ndim)
 def ortho_weight(ndim):
     W = numpy.random.randn(ndim, ndim)
     u, s, v = numpy.linalg.svd(W)
     return u.astype(config.floatX)
 
 
-def param_init_lstm(options, params, prefix='lstm'):
-    """
-    Init the LSTM parameter:
-
-    :see: init_params
-    """
-    W = numpy.concatenate([ortho_weight(options['dim_proj']),
-                           ortho_weight(options['dim_proj']),
-                           ortho_weight(options['dim_proj']),
-                           ortho_weight(options['dim_proj'])], axis=1)
-    params[_p(prefix, 'W')] = W
-    U = numpy.concatenate([ortho_weight(options['dim_proj']),
-                           ortho_weight(options['dim_proj']),
-                           ortho_weight(options['dim_proj']),
-                           ortho_weight(options['dim_proj'])], axis=1)
-    params[_p(prefix, 'U')] = U
-    b = numpy.zeros((4 * options['dim_proj'],))
-    params[_p(prefix, 'b')] = b.astype(config.floatX)
-
-    return params
-
-
-def lstm_layer(tparams, state_below, options, prefix='lstm', mask=None):
+def lstm_layer(tparams, state_below, options, mask=None):
     nsteps = state_below.shape[0]
     if state_below.ndim == 3:
         n_samples = state_below.shape[1]
@@ -157,7 +142,7 @@ def lstm_layer(tparams, state_below, options, prefix='lstm', mask=None):
         return _x[:, n * dim:(n + 1) * dim]
 
     def _step(m_, x_, h_, c_):
-        preact = tensor.dot(h_, tparams[_p(prefix, 'U')])
+        preact = tensor.dot(h_, tparams['lstm_U'])
         preact += x_
 
         i = tensor.nnet.sigmoid(_slice(preact, 0, options['dim_proj']))
@@ -173,19 +158,19 @@ def lstm_layer(tparams, state_below, options, prefix='lstm', mask=None):
 
         return h, c
 
-    state_below = (tensor.dot(state_below, tparams[_p(prefix, 'W')]) +
-                   tparams[_p(prefix, 'b')])
+    state_below = (tensor.dot(state_below, tparams['lstm_W']) +
+                   tparams['lstm_b'])
 
     dim_proj = options['dim_proj']
     rval, updates = theano.scan(_step,
                                 sequences=[mask, state_below],
-                                outputs_info=[tensor.alloc(numpy_floatX(0.),
+                                outputs_info=[tensor.alloc(numpy.asarray(0.0, dtype=config.floatX),
                                                            n_samples,
                                                            dim_proj),
-                                              tensor.alloc(numpy_floatX(0.),
+                                              tensor.alloc(numpy.asarray(0.0, dtype=config.floatX),
                                                            n_samples,
                                                            dim_proj)],
-                                name=_p(prefix, '_layers'),
+                                name='lstm__layers',
                                 n_steps=nsteps)
     return rval[0]
 
@@ -219,13 +204,13 @@ def adadelta(lr, tparams, grads, x, mask, y, cost):
        Rate Method*, arXiv:1212.5701.
     """
 
-    zipped_grads = [theano.shared(p.get_value() * numpy_floatX(0.),
+    zipped_grads = [theano.shared(p.get_value() * numpy.asarray(0.0, dtype=config.floatX),
                                   name='%s_grad' % k)
                     for k, p in tparams.items()]
-    running_up2 = [theano.shared(p.get_value() * numpy_floatX(0.),
+    running_up2 = [theano.shared(p.get_value() * numpy.asarray(0.0, dtype=config.floatX),
                                  name='%s_rup2' % k)
                    for k, p in tparams.items()]
-    running_grads2 = [theano.shared(p.get_value() * numpy_floatX(0.),
+    running_grads2 = [theano.shared(p.get_value() * numpy.asarray(0.0, dtype=config.floatX),
                                     name='%s_rgrad2' % k)
                       for k, p in tparams.items()]
 
@@ -255,7 +240,7 @@ def build_model(tparams, options):
     trng = RandomStreams(SEED)
 
     # Used for dropout.
-    use_noise = theano.shared(numpy_floatX(0.))
+    use_noise = theano.shared(numpy.asarray(0.0, dtype=config.floatX))
 
     x = tensor.matrix('x', dtype='int64')
     mask = tensor.matrix('mask', dtype=config.floatX)
@@ -267,7 +252,7 @@ def build_model(tparams, options):
     emb = tparams['Wemb'][x.flatten()].reshape([n_timesteps,
                                                 n_samples,
                                                 options['dim_proj']])
-    proj = lstm_layer(tparams, emb, options, prefix='lstm', mask=mask)
+    proj = lstm_layer(tparams, emb, options, mask=mask)
 
     proj = (proj * mask[:, :, None]).sum(axis=0)
     proj = proj / mask.sum(axis=0)[:, None]
@@ -321,8 +306,7 @@ def pred_error(f_pred, prepare_data, data, iterator, verbose=False):
         preds = f_pred(x, mask)
         targets = numpy.array(data[1])[valid_index]
         valid_err += (preds == targets).sum()
-    valid_err = 1. - numpy_floatX(valid_err) / len(data[0])
-
+    valid_err = 1. - numpy.asarray(valid_err, dtype=config.floatX) / len(data[0])
     return valid_err
 
 
@@ -340,7 +324,6 @@ def train_lstm(
     batch_size=16,  # The batch size during training.
     valid_batch_size=64,  # The batch size used for validation/test set.
     dataset='jpcr',
-
     # Parameter for extra option
     noise_std=0.,
     use_dropout=True,  # if False slightly faster, but worst test error
@@ -369,6 +352,7 @@ def train_lstm(
     # params and tparams have different copy of the weights.
     tparams = init_tparams(params)
 
+    # Optimization
     # use_noise is for dropout
     (use_noise, x, mask, y, f_pred_prob, f_pred, cost) = build_model(tparams, model_options)
 
@@ -381,23 +365,16 @@ def train_lstm(
     f_grad_shared, f_update = optimizer(lr, tparams, grads,
                                         x, mask, y, cost)
 
-    print('Optimization')
-
     kf_valid = get_minibatches_idx(len(valid[0]), valid_batch_size)
     kf_test = get_minibatches_idx(len(test[0]), valid_batch_size)
 
-    print("%d train examples" % len(train[0]))
-    print("%d valid examples" % len(valid[0]))
-    print("%d test examples" % len(test[0]))
+    print("Trainset size:\t" + str(len(train[0])))
+    print("Validset size:\t" + str(len(valid[0])))
+    print("Testset size:\t" + str(len(test[0])))
 
     history_errs = []
     best_p = None
     bad_count = 0
-
-    if validFreq == -1:
-        validFreq = len(train[0]) // batch_size
-    if saveFreq == -1:
-        saveFreq = len(train[0]) // batch_size
 
     uidx = 0  # the number of update done
     estop = False  # early stop
@@ -492,7 +469,7 @@ def train_lstm(
     valid_err = pred_error(f_pred, prepare_data, valid, kf_valid)
     test_err = pred_error(f_pred, prepare_data, test, kf_test)
 
-    print( 'Train ', train_err, 'Valid ', valid_err, 'Test ', test_err )
+    print( 'Train ', train_err, 'Valid ', valid_err, 'Test ', test_err)
     if saveto:
         numpy.savez(saveto, train_err=train_err,
                     valid_err=valid_err, test_err=test_err,
