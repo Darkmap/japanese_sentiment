@@ -74,7 +74,6 @@ $$o_{t}=\sigma(W_{o}w_{t}+U_{o}h_{t-1}+V_{o}C_{t}+b_{o})$$
 $$h_{t}=o_{t} \ast \tanh(C_{t})$$
  
 In order to build appropriate language model that can provide high quality word embeddings for the sentiment classification, the model we adopted add a mean pooling layer which will count the mean vector of the output vector $h_{i}$ of each token $i$ in one customer review. Then, the mean vector \textit{h} and the corresponding sentiment polarity label (positive:1 or negative:0) is used as the input of a logistic regression layer which help to train the weights of LSTM node through backpropagation process. The architecture of the model is shown in figure \ref{fig:lstmmodel}. We implement this model by following this tutorial \cite{lstmtutorial} and using \textit{Theano}\footnote{http://deeplearning.net/software/theano/}, which is a python library for implementing deeplearning algorithms.
-
 \begin{figure}[htb]
 \centering
 \includegraphics[scale=0.2]{LSTMMODEL.png}
@@ -83,9 +82,7 @@ In order to build appropriate language model that can provide high quality word 
 \end{figure}
 
 
-
-
-
+To train our model, we firstly convert the Japanese corpus to "index" representation. Which means use correspoinding index from the vocabulary replace each real japanese word. So that a review will be translated to a list of integers. For each word, the index will firstly represented by a random $d$ dimensional vector as its initial distributed representation. The $d$ is set by ourselves which represent the dimension of the word embeddings we want to trained. Eventually, after the model converged, we fetch the word embeddings from the trained weight. The word embeddings will be a $\left| V\right| \ast d$ matrix that each vector $v_{i}$ of row $i$ is the distributed representation of $i^{th}$ word in the vocabulary. The $\left| V\right|$ is the size of the vocabulary. Finally, the word embeddings will be used to build the sample vector for training the sentiment classifier. We will discuss the training steps and the evaluation of the sentiment classification in next section.
 
 
 \subsection{Evaluation}
